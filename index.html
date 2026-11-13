@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- ใส่ Measurement ID จาก Google Analytics > Admin > Data streams ใน content -->
+<meta name="ga-measurement-id" content="">
+<!-- Supabase Connect: ใช้ Project URL และ Publishable key (sb_publishable_...) -->
+<meta name="stats-project-url" content="https://ilyndpqgjwawakliuajg.supabase.co">
+<meta name="stats-publishable-key" content="sb_publishable_AIvRVdVkxfJbOmdBA_Lm6Q_U-ZkmfmO">
 <meta name="theme-color" content="#fffaeb">
 <meta name="description" content="ตอบ 10 คำถามเพื่อค้นหาไทป์สมุนไพรของคุณ">
 <title>Herb to Heart | คุณเป็นสมุนไพรอะไร?</title>
@@ -201,6 +206,22 @@ progress::-moz-progress-bar { background: #43876f; border-radius: 999px; }
 @media (prefers-reduced-motion: no-preference) {
   button, .choice { transition: background-color .15s, border-color .15s; }
 }
+.stats-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.stats-brand { font-size: .85rem; font-weight: 600; }
+#stats-title { font-size: clamp(1.5rem, 5vw, 2.25rem); line-height: 1.3; }
+#stats-refresh { flex-shrink: 0; }
+.stats-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 18px 0 22px; }
+.stats-totals div { padding: 12px 8px; text-align: center; border-radius: 16px; background: var(--mint-light); }
+.stats-totals dt { font-size: .82rem; }
+.stats-totals dd { margin: 0; font-size: clamp(1.5rem, 7vw, 2.3rem); font-weight: 700; }
+.stats-results { display: grid; gap: 10px; margin: 10px 0 16px; padding: 0; list-style: none; }
+.stats-results li { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.stats-results img { width: 42px; height: 42px; object-fit: contain; }
+.stats-herb strong { font-size: .94rem; }
+.stats-herb progress { margin: 3px 0 0; }
+.stats-share { text-align: end; font-size: .88rem; font-variant-numeric: tabular-nums; }
+.stats-share strong { display: block; }
+.stats-return { display: inline-block; margin-top: 14px; color: inherit; text-decoration: underline; }
 </style>
 <!-- Mali font license
 Copyright 2018 The Mali Project Authors (https://github.com/cadsondemak/Mali)
@@ -363,6 +384,26 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
       </div>
     </section>
 
+    <section id="stats" class="panel" hidden aria-labelledby="stats-title">
+      <div class="stats-header">
+        <div>
+          <p class="stats-brand" lang="en">Herb to Heart</p>
+          <h1 id="stats-title" tabindex="-1">สถิติควิซ</h1>
+        </div>
+        <button class="secondary" id="stats-refresh" type="button">อัปเดตสถิติ</button>
+      </div>
+      <p id="stats-status" class="micro" role="status"></p>
+      <div id="stats-data" hidden>
+        <dl class="stats-totals">
+          <div><dt>เบราว์เซอร์ที่เข้าชม</dt><dd id="stats-visitors"></dd></div>
+          <div><dt>จำนวนครั้งที่เล่นจบ</dt><dd id="stats-completed"></dd></div>
+        </dl>
+        <h2>คนได้สมุนไพรอะไรกันบ้าง?</h2>
+        <ol class="stats-results" id="stats-results"></ol>
+        <p class="micro">นับผู้เข้าชมแยกตามเบราว์เซอร์ เล่นจบนับทุกครั้งที่ทำควิซครบ เปอร์เซ็นต์คิดจากจำนวนครั้งที่เล่นจบทั้งหมด</p>
+      </div>
+      <a class="stats-return" id="stats-return">กลับหน้าแรก</a>
+    </section>
   </main>
 </div>
 
@@ -747,12 +788,39 @@ const defaultQuestions = [
 ];
 
 const $ = (id) => document.getElementById(id);
+
+const isStatsPage = new URLSearchParams(location.search).has('stats');
+
+function initializeAnalytics() {
+  const id = document.querySelector('meta[name="ga-measurement-id"]').content.trim().toUpperCase();
+  if (isStatsPage || location.protocol !== 'https:' || !/^G-[A-Z0-9]+$/.test(id)) return null;
+
+  window.dataLayer = window.dataLayer || [];
+  function gtag() { window.dataLayer.push(arguments); }
+  gtag('js', new Date());
+  gtag('config', id, {
+    allow_google_signals: false,
+    allow_ad_personalization_signals: false
+  });
+
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(id);
+  document.head.append(script);
+  return gtag;
+}
+
+const analyticsTag = initializeAnalytics();
+function trackQuizEvent(name, parameters) {
+  analyticsTag?.('event', name, parameters);
+}
+
 const storageKey = 'herb-to-heart.questions.v1';
 const images = JSON.parse(document.getElementById('embedded-images').textContent);
 const defaultColor = '#90d9c0';
 const hexColor = /^#[0-9a-f]{6}$/i;
-const pages = ['home', 'quiz', 'result'];
-const headings = { home: 'home-title', quiz: 'question-title', result: 'result-title' };
+const pages = ['home', 'quiz', 'result', 'stats'];
+const headings = { home: 'home-title', quiz: 'question-title', result: 'result-title', stats: 'stats-title' };
 const questions = loadQuestions();
 let resultType;
 let step = 0;
@@ -838,6 +906,8 @@ function renderQuestion() {
 }
 
 function start() {
+  if (statsVisitorId) statsAttemptId = crypto.randomUUID();
+  trackQuizEvent('quiz_start');
   answers = [];
   step = 0;
   renderQuestion();
@@ -873,11 +943,20 @@ function showResult() {
     return item;
   }));
   show('result');
+  trackQuizEvent('quiz_complete', { herb_type: resultType });
+  if (statsAttemptId) {
+    statsRequest('herb_record_result', {
+      p_visitor_id: statsVisitorId, p_attempt_id: statsAttemptId, p_herb_type: resultType
+    }).catch(() => {});
+  }
 }
 
 $('brand-logo').src = images.logo;
 $('home-logo').src = images.logo;
-$('home-button').addEventListener('click', () => show('home'));
+$('home-button').addEventListener('click', () => {
+  if (isStatsPage) location.assign($('stats-return').href);
+  else show('home');
+});
 $('start-button').addEventListener('click', start);
 $('restart-button').addEventListener('click', start);
 $('back-button').addEventListener('click', () => {
@@ -919,6 +998,7 @@ function openSharePreview() {
   $('native-share').hidden = !navigator.share || !navigator.canShare?.({ files: [shareFile] });
   $('share-status').textContent = '';
   $('share-dialog').showModal();
+  trackQuizEvent('quiz_share_preview', { herb_type: resultType });
 }
 
 async function shareCard() {
@@ -933,6 +1013,9 @@ async function shareCard() {
 
 $('share-button').addEventListener('click', openSharePreview);
 $('native-share').addEventListener('click', shareCard);
+$('download-card').addEventListener('click', () => {
+  trackQuizEvent('quiz_card_download', { herb_type: resultType });
+});
 $('share-dialog').addEventListener('close', () => {
   URL.revokeObjectURL(shareUrl);
   $('share-image').removeAttribute('src');
@@ -940,6 +1023,105 @@ $('share-dialog').addEventListener('close', () => {
   shareFile = undefined;
   shareUrl = undefined;
 });
+
+const statsProject = document.querySelector('meta[name="stats-project-url"]').content.trim().replace(/\/+$/, '');
+const statsKey = document.querySelector('meta[name="stats-publishable-key"]').content.trim();
+const statsReady = /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(statsProject)
+  && /^sb_publishable_[\w-]+$/.test(statsKey);
+const visitorStorageKey = 'herb-to-heart.visitor-id.v1';
+const uuidPattern = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+let statsVisitorId;
+let statsAttemptId;
+
+async function statsRequest(functionName, parameters) {
+  const response = await fetch(statsProject + '/rest/v1/rpc/' + functionName, {
+    method: 'POST',
+    headers: { apikey: statsKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify(parameters),
+    keepalive: true
+  });
+  if (!response.ok) throw new Error('Stats request failed: ' + response.status);
+  return response.status === 204 ? null : response.json();
+}
+
+function recordVisit() {
+  if (!statsReady || location.protocol !== 'https:') return;
+  statsVisitorId = crypto.randomUUID();
+  try {
+    const savedId = localStorage.getItem(visitorStorageKey);
+    if (savedId && uuidPattern.test(savedId)) statsVisitorId = savedId;
+    else localStorage.setItem(visitorStorageKey, statsVisitorId);
+  } catch {
+    // Storage can be blocked. Count this visit with its temporary ID.
+  }
+  statsRequest('herb_record_visit', { p_visitor_id: statsVisitorId }).catch(() => {});
+}
+
+function statsRow([key, herb], count, total) {
+  const percent = total ? 100 * count / total : 0;
+  const number = new Intl.NumberFormat('th-TH');
+  const percentage = new Intl.NumberFormat('th-TH', { style: 'percent', maximumFractionDigits: 1 });
+  const row = document.createElement('li');
+  const image = document.createElement('img');
+  image.src = images[key];
+  image.alt = '';
+  const label = document.createElement('div');
+  label.className = 'stats-herb';
+  const name = document.createElement('strong');
+  name.textContent = herb.name;
+  const bar = document.createElement('progress');
+  bar.max = 100;
+  bar.value = percent;
+  bar.setAttribute('aria-hidden', 'true');
+  label.append(name, bar);
+  const share = document.createElement('div');
+  share.className = 'stats-share';
+  const value = document.createElement('strong');
+  value.textContent = percentage.format(percent / 100);
+  share.append(value, number.format(count) + ' ครั้ง');
+  row.append(image, label, share);
+  return row;
+}
+
+async function refreshStats() {
+  const status = $('stats-status');
+  const refresh = $('stats-refresh');
+  if (!statsReady) {
+    status.textContent = 'ยังไม่ได้เชื่อมฐานข้อมูล ตั้งค่า Supabase ในไฟล์เว็บไซต์ก่อนเปิดเก็บสถิติ';
+    refresh.hidden = true;
+    return;
+  }
+  refresh.disabled = true;
+  status.textContent = 'กำลังโหลดสถิติ…';
+  try {
+    const data = await statsRequest('herb_get_stats', {});
+    const number = new Intl.NumberFormat('th-TH');
+    $('stats-visitors').textContent = number.format(data.visitors);
+    $('stats-completed').textContent = number.format(data.completed);
+    const count = (key) => data.results[key] || 0;
+    const ranked = Object.entries(types).sort(([a], [b]) => count(b) - count(a));
+    $('stats-results').replaceChildren(...ranked.map(entry => statsRow(entry, count(entry[0]), data.completed)));
+    $('stats-data').hidden = false;
+    status.textContent = data.completed ? 'อัปเดตล่าสุด ' + new Date().toLocaleTimeString('th-TH') : 'ยังไม่มีผลควิซที่เล่นจบ';
+  } catch {
+    status.textContent = $('stats-data').hidden
+      ? 'โหลดสถิติไม่ได้ ตรวจการตั้งค่าแล้วลองใหม่'
+      : 'อัปเดตไม่ได้ กำลังแสดงสถิติจากการโหลดครั้งก่อน';
+  } finally {
+    refresh.disabled = false;
+  }
+}
+
+if (isStatsPage) {
+  const quizUrl = new URL(location.href);
+  quizUrl.searchParams.delete('stats');
+  $('stats-return').href = quizUrl.href;
+  $('stats-refresh').addEventListener('click', refreshStats);
+  show('stats');
+  refreshStats();
+} else {
+  recordVisit();
+}
 </script>
 </body>
 </html>
